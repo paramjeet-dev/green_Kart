@@ -10,6 +10,7 @@ const {
   completeListing,
   getMyListings,
   getDashboardStats,
+  getMapListings,
 } = require("../controllers/listingController");
 const { protect, authorize } = require("../middleware/auth");
 const { upload } = require("../config/cloudinary");
@@ -18,6 +19,7 @@ const { upload } = require("../config/cloudinary");
 router.get("/", getListings);
 router.get("/stats", protect, getDashboardStats);
 router.get("/my", protect, getMyListings);
+router.get("/map-data", protect, getMapListings);
 router.get("/:id", getListing);
 
 // Protected routes

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { Menu, X, Leaf, Bell, MessageSquare, LogOut, User, LayoutDashboard, List, PlusCircle } from "lucide-react";
+import { Menu, X, Leaf, Bell, MessageSquare, LogOut, User, LayoutDashboard, List, PlusCircle, Map } from "lucide-react";
 
-const roleLabel = { donor: "Donor", ngo: "NGO", individual: "Individual" };
+const roleLabel = { donor: "Donor", ngo: "NGO", individual: "Individual", admin: "Admin" };
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -19,6 +19,7 @@ export default function Navbar() {
   const navLinks = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/listings", label: "Browse", icon: List },
+    { to: "/map", label: "Map", icon: Map },
     { to: "/messages", label: "Messages", icon: MessageSquare },
   ];
 
@@ -85,6 +86,15 @@ export default function Navbar() {
                   >
                     <User className="w-4 h-4" /> Profile
                   </Link>
+                  {user?.role === "admin" && (
+                    <Link
+                      to="/admin"
+                      onClick={() => setDropOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-green-primary hover:bg-green-50"
+                    >
+                      <LayoutDashboard className="w-4 h-4" /> Admin Panel
+                    </Link>
+                  )}
                   <hr className="my-1 border-gray-100" />
                   <button
                     onClick={handleLogout}

@@ -256,6 +256,26 @@ exports.completeListing = async (req, res, next) => {
   }
 };
 
+// @desc    Get listings with coordinates for map view
+// @route   GET /api/listings/map-data
+// @access  Private
+exports.getMapListings = async (req, res, next) => {
+  try {
+    const listings = await Listing.find({
+      status: "active",
+      "location.lat": { $exists: true, $ne: null },
+      "location.lng": { $exists: true, $ne: null },
+    })
+      .populate("donor", "name role phone")
+      .select("foodName quantity category status location expiryDate images donor createdAt")
+      .limit(200);
+
+    res.status(200).json({ success: true, count: listings.length, listings });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get my listings (donor)
 // @route   GET /api/listings/my
 // @access  Private
