@@ -12,7 +12,14 @@ import CreateListing from "./pages/CreateListing";
 import EditListing from "./pages/EditListing";
 import Messages from "./pages/Messages";
 import Profile from "./pages/Profile";
+import MapView from "./pages/MapView";
 import NotFound from "./pages/NotFound";
+
+import AdminLayout from "./components/admin/AdminLayout";
+import AdminOverview from "./pages/admin/AdminOverview";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminListings from "./pages/admin/AdminListings";
+// import AdminMapView from "./pages/admin/AdminMapView";
 
 // Layout
 import Layout from "./components/layout/Layout";
@@ -30,6 +37,13 @@ const GuestRoute = ({ children }) => {
   if (loading) return <Spinner fullPage />;
   return !isAuthenticated ? children : <Navigate to="/dashboard" replace />;
 };
+
+const AdminRoute = ({ children }) => {
+  const { user, loading, isAuthenticated } = useAuth();
+  if (loading) return <Spinner fullPage />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return user?.role === "admin" ? children : <Navigate to="/dashboard" replace />;
+}
 
 export default function App() {
   return (
@@ -49,6 +63,14 @@ export default function App() {
         <Route path="/messages" element={<Messages />} />
         <Route path="/messages/:listingId/:userId" element={<Messages />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/map" element={<MapView />} />
+      </Route>
+
+      {/* Admin */}
+      <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+        <Route index element={<AdminOverview />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="listings" element={<AdminListings />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />

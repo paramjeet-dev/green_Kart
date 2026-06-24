@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
-import api from "../../services/api";
-import Spinner from "../../components/common/Spinner";
+import api from "../services/api";
+import Spinner from "../components/common/Spinner";
 import { MapPin, List, Filter, X, Clock, Package, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
 
