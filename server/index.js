@@ -32,6 +32,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/listings", require("./routes/listings"));
 app.use("/api/messages", require("./routes/messages"));
+app.use("/api/admin", require("./routes/admin"));
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -102,8 +103,7 @@ io.on("connection", (socket) => {
     socket.to(`chat:${listingId}`).emit("chat:userStopTyping", { userId });
   });
 
-  socket.on("disconnect", (reason) => {
-    console.log(`❌ Socket disconnected: ${socket.id}, reason: ${reason}`);
+  socket.on("disconnect", () => {
     // Remove user from active users
     for (const [userId, socketId] of activeUsers.entries()) {
       if (socketId === socket.id) {
