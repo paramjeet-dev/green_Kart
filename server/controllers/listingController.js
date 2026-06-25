@@ -2,6 +2,8 @@ const Listing = require("../models/Listing");
 const User = require("../models/User");
 const ErrorResponse = require("../utils/errorResponse");
 const { cloudinary } = require("../config/cloudinary");
+const { notifyListingClaimed, notifyExchangeComplete } = require("../utils/push");
+const { emailListingClaimed, emailExchangeComplete } = require("../utils/email");
 
 // @desc    Get all active listings (with filters)
 // @route   GET /api/listings
@@ -217,6 +219,11 @@ exports.claimListing = async (req, res, next) => {
     // Update recipient stats
     await User.findByIdAndUpdate(req.user._id, { $inc: { totalReceived: 1 } });
 
+    // Notify donor - push + email (fire and forget)
+    const donor = await User.findById(updatedListing.donor._id);
+    notifyListingClaimed(donor._id, updatedListing.foodName, req.user.name).catch(() => {});
+    emailListingClaimed(donor.email, donor.name, updatedListing.foodName, req.user.name).catch(() => {});
+
     res.status(200).json({ success: true, listing: updatedListing });
   } catch (error) {
     next(error);
@@ -250,6 +257,14 @@ exports.completeListing = async (req, res, next) => {
       .populate("donor", "name email role phone avatar")
       .populate("claimedBy", "name email role");
 
+
+    // Notify both parties on completion
+    if (updatedListing.claimedBy) {
+      const claimer = await User.findById(updatedListing.claimedBy._id);
+      notifyExchangeComplete(req.user._id, updatedListing.foodName).catch(() => {});
+      notifyExchangeComplete(claimer._id, updatedListing.foodName).catch(() => {});
+      emailExchangeComplete(req.user.email, req.user.name, claimer.email, claimer.name, updatedListing.foodName).catch(() => {});
+    }
     res.status(200).json({ success: true, listing: updatedListing });
   } catch (error) {
     next(error);
