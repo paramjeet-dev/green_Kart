@@ -3,13 +3,15 @@ import { useForm } from "react-hook-form";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import toast from "react-hot-toast";
-import { User, Mail, Phone, MapPin, Edit2, Save, X } from "lucide-react";
+import usePushNotifications from "../hooks/usePushNotifications";
+import { User, Mail, Phone, MapPin, Edit2, Save, X, Bell, BellOff } from "lucide-react";
 
 const roleLabel = { donor: "🍱 Donor", ngo: "🤝 NGO", individual: "🙋 Individual" };
 
 export default function Profile() {
   const { user, updateUser } = useAuth();
   const [editing, setEditing] = useState(false);
+  const { permission, subscribed, subscribe, unsubscribe } = usePushNotifications();
   const [loading, setLoading] = useState(false);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm({
@@ -126,6 +128,30 @@ export default function Profile() {
           )}
         </div>
       </div>
+
+      {/* Push Notifications */}
+      {"Notification" in window && (
+        <div className="card p-6 mt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="section-title">Push Notifications</h3>
+              <p className="text-sm text-gray-sub mt-1">Get notified when food is claimed, exchanges complete, or messages arrive.</p>
+            </div>
+            {subscribed ? (
+              <button onClick={unsubscribe} className="btn-outline flex items-center gap-2 text-sm py-2">
+                <BellOff className="w-4 h-4" /> Disable
+              </button>
+            ) : (
+              <button onClick={subscribe} className="btn-primary flex items-center gap-2 text-sm py-2">
+                <Bell className="w-4 h-4" /> Enable
+              </button>
+            )}
+          </div>
+          {permission === "denied" && (
+            <p className="text-xs text-red-error mt-3">Notifications are blocked in your browser. Allow them in site settings to enable this feature.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

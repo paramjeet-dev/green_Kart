@@ -32,6 +32,7 @@ export default function CreateListing() {
 
   const onSubmit = async (data) => {
     if (!location.address) { toast.error("Please select a pickup location"); return; }
+    if (!location.lat || !location.lng) { toast.error("Please pick an address from the dropdown — this enables map discovery"); return; }
     setLoading(true);
 
     const formData = new FormData();

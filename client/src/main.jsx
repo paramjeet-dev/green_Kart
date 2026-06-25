@@ -5,14 +5,21 @@ import { Toaster } from "react-hot-toast";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 import { SocketProvider } from "./context/SocketContext";
+import useTokenRefresh from "./hooks/useTokenRefresh";
 import "./index.css";
+
+// Inner wrapper to access auth context for token refresh hook
+function AppWithRefresh() {
+  useTokenRefresh();
+  return <App />;
+}
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
         <SocketProvider>
-          <App />
+          <AppWithRefresh />
           <Toaster
             position="top-right"
             toastOptions={{

@@ -20,7 +20,23 @@ export const AuthProvider = ({ children }) => {
         setUser(data.user);
         localStorage.setItem("gk_user", JSON.stringify(data.user));
       } catch {
-        logout();
+        // Try silent refresh before giving up
+        const refreshToken = localStorage.getItem("gk_refresh_token");
+        if (refreshToken) {
+          try {
+            const { data } = await api.post("/auth/refresh", { refreshToken });
+            localStorage.setItem("gk_token", data.token);
+            localStorage.setItem("gk_refresh_token", data.refreshToken);
+            setToken(data.token);
+            const me = await api.get("/auth/me");
+            setUser(me.data.user);
+            localStorage.setItem("gk_user", JSON.stringify(me.data.user));
+          } catch {
+            logout();
+          }
+        } else {
+          logout();
+        }
       } finally {
         setLoading(false);
       }
@@ -33,6 +49,7 @@ export const AuthProvider = ({ children }) => {
     setToken(data.token);
     setUser(data.user);
     localStorage.setItem("gk_token", data.token);
+    localStorage.setItem("gk_refresh_token", data.refreshToken || "");
     localStorage.setItem("gk_user", JSON.stringify(data.user));
     return data.user;
   }, []);
@@ -42,14 +59,20 @@ export const AuthProvider = ({ children }) => {
     setToken(data.token);
     setUser(data.user);
     localStorage.setItem("gk_token", data.token);
+    localStorage.setItem("gk_refresh_token", data.refreshToken || "");
     localStorage.setItem("gk_user", JSON.stringify(data.user));
     return data.user;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const refreshToken = localStorage.getItem("gk_refresh_token");
+    if (refreshToken) {
+      api.post("/auth/logout", { refreshToken }).catch(() => {});
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem("gk_token");
+    localStorage.removeItem("gk_refresh_token");
     localStorage.removeItem("gk_user");
   }, []);
 
