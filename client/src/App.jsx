@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Listings from "./pages/Listings";
+import MyListings from "./pages/MyListings";
 import ListingDetail from "./pages/ListingDetail";
 import CreateListing from "./pages/CreateListing";
 import EditListing from "./pages/EditListing";
@@ -57,6 +58,7 @@ export default function App() {
       <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/listings" element={<Listings />} />
+        <Route path="/listings/my" element={<MyListings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         <Route path="/listings/create" element={<CreateListing />} />
         <Route path="/listings/:id/edit" element={<EditListing />} />
