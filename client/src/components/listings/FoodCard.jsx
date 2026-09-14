@@ -52,6 +52,7 @@ export default function FoodCard({ listing }) {
           <div className="flex items-center gap-1.5 text-xs text-gray-sub">
             <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">{location?.address || "Location not specified"}</span>
+            {location?.approximate && <span className="text-gray-400 flex-shrink-0">(approx.)</span>}
           </div>
           <div className={`flex items-center gap-1.5 text-xs ${isUrgent ? "text-orange-600 font-medium" : "text-gray-sub"}`}>
             <Clock className="w-3.5 h-3.5 flex-shrink-0" />

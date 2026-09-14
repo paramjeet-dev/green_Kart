@@ -144,6 +144,11 @@ export default function ListingDetail() {
                 <MapPin className="w-4 h-4 text-green-primary mt-0.5 flex-shrink-0" />
                 <span>{listing.location?.address}</span>
               </div>
+              {listing.location?.approximate && (
+                <p className="text-xs text-gray-400 mt-1">
+                  This is an approximate area. The exact address is shared once you claim this listing.
+                </p>
+              )}
             </div>
 
             {listing.pickupInstructions && (

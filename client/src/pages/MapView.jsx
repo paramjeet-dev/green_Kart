@@ -47,6 +47,9 @@ function ListingCard({ listing, onClose }) {
             <MapPin className="w-3.5 h-3.5" />
             <span className="truncate">{listing.location?.address}</span>
           </div>
+          {listing.location?.approximate && (
+            <p className="text-xs text-gray-400">Pin is approximate until claimed</p>
+          )}
           <div className={`flex items-center gap-1.5 text-xs ${daysLeft <= 1 ? "text-orange-600 font-medium" : "text-gray-500"}`}>
             <Clock className="w-3.5 h-3.5" />
             <span>{daysLeft < 0 ? "Expired" : daysLeft === 0 ? "Expires today" : `${daysLeft} day${daysLeft !== 1 ? "s" : ""} left`}</span>
