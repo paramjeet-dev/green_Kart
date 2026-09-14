@@ -74,8 +74,17 @@ const listingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-expire listings past their expiry date
-listingSchema.index({ expiryDate: 1 }, { expireAfterSeconds: 0 });
+// NOTE: this used to be a TTL index (`expireAfterSeconds: 0`), which made MongoDB
+// permanently DELETE the document the moment expiryDate passed — including
+// listings that were already claimed/completed, silently corrupting donation
+// history, dashboard stats, and any chat thread that referenced the listing.
+// Marking listings "expired" is handled by the hourly cron job in utils/cron.js
+// instead; this plain index just keeps that query (and the "expiring soon"
+// reminder query) fast.
+listingSchema.index({ status: 1, expiryDate: 1 });
+
+// Supports the daily cron job that archives listings stuck in "claimed" for too long
+listingSchema.index({ status: 1, claimedAt: 1 });
 
 // Text index for search
 listingSchema.index({ foodName: "text", description: "text" });
