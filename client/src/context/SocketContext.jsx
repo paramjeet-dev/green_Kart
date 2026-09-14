@@ -5,43 +5,40 @@ import { useAuth } from "./AuthContext";
 const SocketContext = createContext(null);
 
 export const SocketProvider = ({ children }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, token, isAuthenticated } = useAuth();
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    if (!isAuthenticated || !user || !token) return;
 
+    // The token is verified server-side in the Socket.IO auth middleware —
+    // the server derives our identity from it rather than trusting anything
+    // we emit, so we never send our own userId/name over the socket.
     const socket = io(import.meta.env.VITE_SERVER_URL || "http://localhost:5000", {
       transports: ["websocket", "polling"],
+      auth: { token },
     });
 
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setConnected(true);
-      socket.emit("user:join", user._id);
-    });
-
+    socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
+    socket.on("connect_error", () => setConnected(false));
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
       setConnected(false);
     };
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, token]);
 
   const joinChat = (listingId) => {
-    if (socketRef.current && user) {
-      socketRef.current.emit("chat:join", { listingId, userId: user._id });
-    }
+    socketRef.current?.emit("chat:join", { listingId });
   };
 
-  const sendMessage = (payload) => {
-    if (socketRef.current) {
-      socketRef.current.emit("message:send", payload);
-    }
+  const sendMessage = ({ listingId, receiverId, content }) => {
+    socketRef.current?.emit("message:send", { listingId, receiverId, content });
   };
 
   const onMessage = (handler) => {
@@ -55,11 +52,11 @@ export const SocketProvider = ({ children }) => {
   };
 
   const emitTyping = (listingId) => {
-    socketRef.current?.emit("chat:typing", { listingId, userId: user._id, userName: user.name });
+    socketRef.current?.emit("chat:typing", { listingId });
   };
 
   const emitStopTyping = (listingId) => {
-    socketRef.current?.emit("chat:stopTyping", { listingId, userId: user._id });
+    socketRef.current?.emit("chat:stopTyping", { listingId });
   };
 
   return (

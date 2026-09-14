@@ -85,10 +85,8 @@ export default function Messages() {
       setMessages((prev) => [...prev, data.message]);
       socketSend({
         listingId: activeConv.listingId,
-        senderId: user._id,
         receiverId: activeConv.userId,
         content: input.trim(),
-        senderName: user.name,
       });
       setInput("");
     } catch {
