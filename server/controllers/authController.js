@@ -3,6 +3,7 @@ const RefreshToken = require("../models/RefreshToken");
 const generateToken = require("../utils/generateToken");
 const ErrorResponse = require("../utils/errorResponse");
 const { emailWelcome } = require("../utils/email");
+const { REFRESH_COOKIE_NAME, refreshCookieOptions } = require("../utils/cookieOptions");
 
 const sendTokenResponse = async (user, statusCode, req, res) => {
   const accessToken = generateToken(user._id);
@@ -21,10 +22,13 @@ const sendTokenResponse = async (user, statusCode, req, res) => {
     createdAt: user.createdAt,
   };
 
+  // Refresh token goes in an httpOnly cookie — never in the JSON body, so
+  // client-side JS (and anything that can run in the page) never sees it.
+  res.cookie(REFRESH_COOKIE_NAME, refreshTokenDoc.token, refreshCookieOptions());
+
   res.status(statusCode).json({
     success: true,
     token: accessToken,
-    refreshToken: refreshTokenDoc.token,
     user: userPayload,
   });
 };
@@ -70,22 +74,24 @@ exports.login = async (req, res, next) => {
 
 // @desc    Refresh access token
 // @route   POST /api/auth/refresh
-// @access  Public (requires valid refresh token)
+// @access  Public (requires valid refresh-token cookie)
 exports.refreshToken = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
     if (!refreshToken) return next(new ErrorResponse("Refresh token is required", 400));
 
     const tokenDoc = await RefreshToken.findOne({ token: refreshToken, isRevoked: false });
 
     if (!tokenDoc || tokenDoc.expiresAt < new Date()) {
       if (tokenDoc) await tokenDoc.deleteOne();
+      res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
       return next(new ErrorResponse("Invalid or expired refresh token. Please log in again.", 401));
     }
 
     const user = await User.findById(tokenDoc.user);
     if (!user || !user.isActive) {
       await tokenDoc.deleteOne();
+      res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
       return next(new ErrorResponse("User not found or deactivated", 401));
     }
 
@@ -94,10 +100,11 @@ exports.refreshToken = async (req, res, next) => {
     const accessToken = generateToken(user._id);
     const newRefreshTokenDoc = await RefreshToken.generate(user._id, req);
 
+    res.cookie(REFRESH_COOKIE_NAME, newRefreshTokenDoc.token, refreshCookieOptions());
+
     res.status(200).json({
       success: true,
       token: accessToken,
-      refreshToken: newRefreshTokenDoc.token,
     });
   } catch (error) {
     next(error);
@@ -109,10 +116,11 @@ exports.refreshToken = async (req, res, next) => {
 // @access  Private
 exports.logout = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
     if (refreshToken) {
       await RefreshToken.deleteOne({ token: refreshToken });
     }
+    res.clearCookie(REFRESH_COOKIE_NAME, refreshCookieOptions());
     res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (error) {
     next(error);

@@ -11,6 +11,23 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem("gk_token") || null);
   const [loading, setLoading] = useState(true);
 
+  const logout = useCallback(async () => {
+    api.post("/auth/logout").catch(() => {});
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem("gk_token");
+    localStorage.removeItem("gk_user");
+  }, []);
+
+  // The refresh token lives in an httpOnly cookie the browser sends automatically —
+  // this just asks the server to mint a new access token from it.
+  const refreshAccessToken = useCallback(async () => {
+    const { data } = await api.post("/auth/refresh");
+    localStorage.setItem("gk_token", data.token);
+    setToken(data.token);
+    return data.token;
+  }, []);
+
   // Verify token on mount
   useEffect(() => {
     const verify = async () => {
@@ -20,21 +37,14 @@ export const AuthProvider = ({ children }) => {
         setUser(data.user);
         localStorage.setItem("gk_user", JSON.stringify(data.user));
       } catch {
-        // Try silent refresh before giving up
-        const refreshToken = localStorage.getItem("gk_refresh_token");
-        if (refreshToken) {
-          try {
-            const { data } = await api.post("/auth/refresh", { refreshToken });
-            localStorage.setItem("gk_token", data.token);
-            localStorage.setItem("gk_refresh_token", data.refreshToken);
-            setToken(data.token);
-            const me = await api.get("/auth/me");
-            setUser(me.data.user);
-            localStorage.setItem("gk_user", JSON.stringify(me.data.user));
-          } catch {
-            logout();
-          }
-        } else {
+        // Access token expired/invalid — try a silent refresh via the cookie
+        // before giving up and logging the person out.
+        try {
+          await refreshAccessToken();
+          const me = await api.get("/auth/me");
+          setUser(me.data.user);
+          localStorage.setItem("gk_user", JSON.stringify(me.data.user));
+        } catch {
           logout();
         }
       } finally {
@@ -49,7 +59,6 @@ export const AuthProvider = ({ children }) => {
     setToken(data.token);
     setUser(data.user);
     localStorage.setItem("gk_token", data.token);
-    localStorage.setItem("gk_refresh_token", data.refreshToken || "");
     localStorage.setItem("gk_user", JSON.stringify(data.user));
     return data.user;
   }, []);
@@ -59,21 +68,8 @@ export const AuthProvider = ({ children }) => {
     setToken(data.token);
     setUser(data.user);
     localStorage.setItem("gk_token", data.token);
-    localStorage.setItem("gk_refresh_token", data.refreshToken || "");
     localStorage.setItem("gk_user", JSON.stringify(data.user));
     return data.user;
-  }, []);
-
-  const logout = useCallback(async () => {
-    const refreshToken = localStorage.getItem("gk_refresh_token");
-    if (refreshToken) {
-      api.post("/auth/logout", { refreshToken }).catch(() => {});
-    }
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem("gk_token");
-    localStorage.removeItem("gk_refresh_token");
-    localStorage.removeItem("gk_user");
   }, []);
 
   const updateUser = useCallback((updatedUser) => {
@@ -82,7 +78,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUser, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUser, refreshAccessToken, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );

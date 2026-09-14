@@ -4,6 +4,7 @@ const api = axios.create({
   baseURL: "/api",
   timeout: 10000,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true, // send the httpOnly refresh-token cookie
 });
 
 // Attach JWT token to every request
