@@ -9,12 +9,13 @@ const { upload } = require("../config/cloudinary");
 const { uploadLimiter } = require("../middleware/security");
 const { validateListing, handleValidation, sanitiseBody } = require("../middleware/validate");
 
-// Public
-router.get("/",         getListings);
+// Read routes — require login (listings contain donor contact info / pickup addresses,
+// so they should never be reachable by anonymous/unauthenticated requests)
+router.get("/",         protect, getListings);
 router.get("/stats",    protect, getDashboardStats);
 router.get("/my",       protect, getMyListings);
 router.get("/map-data", protect, getMapListings);
-router.get("/:id",      getListing);
+router.get("/:id",      protect, getListing);
 
 // Protected
 router.post(   "/",           protect, authorize("donor"), uploadLimiter, upload.array("images", 3), sanitiseBody, validateListing, handleValidation, createListing);

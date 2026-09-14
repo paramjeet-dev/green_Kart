@@ -4,10 +4,11 @@ const ErrorResponse = require("../utils/errorResponse");
 const { cloudinary } = require("../config/cloudinary");
 const { notifyListingClaimed, notifyExchangeComplete } = require("../utils/push");
 const { emailListingClaimed, emailExchangeComplete } = require("../utils/email");
+const { canSeeExactLocation, applyLocationPrivacy } = require("../utils/locationPrivacy");
 
 // @desc    Get all active listings (with filters)
 // @route   GET /api/listings
-// @access  Public
+// @access  Private (any authenticated role)
 exports.getListings = async (req, res, next) => {
   try {
     const { search, category, status = "active", page = 1, limit = 12 } = req.query;
@@ -25,20 +26,24 @@ exports.getListings = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const listings = await Listing.find(query)
-      .populate("donor", "name email role phone avatar")
+      .populate("donor", "name role avatar")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
+
+    const requesterId = req.user._id.toString();
+    const isAdmin = req.user.role === "admin";
+    const listingObjs = listings.map((l) => applyLocationPrivacy(l.toObject(), { requesterId, isAdmin }));
 
     const total = await Listing.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      count: listings.length,
+      count: listingObjs.length,
       total,
       pages: Math.ceil(total / parseInt(limit)),
       currentPage: parseInt(page),
-      listings,
+      listings: listingObjs,
     });
   } catch (error) {
     next(error);
@@ -47,12 +52,12 @@ exports.getListings = async (req, res, next) => {
 
 // @desc    Get single listing
 // @route   GET /api/listings/:id
-// @access  Public
+// @access  Private (any authenticated role)
 exports.getListing = async (req, res, next) => {
   try {
     const listing = await Listing.findById(req.params.id)
-      .populate("donor", "name email role phone avatar address")
-      .populate("claimedBy", "name email role");
+      .populate("donor", "name role avatar phone")
+      .populate("claimedBy", "name role");
 
     if (!listing) {
       return next(new ErrorResponse("Listing not found", 404));
@@ -61,7 +66,26 @@ exports.getListing = async (req, res, next) => {
     // Increment view count
     await Listing.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
 
-    res.status(200).json({ success: true, listing });
+    // Exact address, coordinates, and donor phone are only for people
+    // actually party to this exchange — the donor, whoever claimed it, or
+    // an admin. Everyone else should message through the app first and get
+    // an approximate area until a claim is made.
+    const listingObj = listing.toObject();
+    const requesterId = req.user._id.toString();
+    const isAdmin = req.user.role === "admin";
+    const authorized = canSeeExactLocation({
+      donorId: listingObj.donor?._id,
+      claimedById: listingObj.claimedBy?._id,
+      requesterId,
+      isAdmin,
+    });
+
+    if (!authorized && listingObj.donor) {
+      delete listingObj.donor.phone;
+    }
+    applyLocationPrivacy(listingObj, { requesterId, isAdmin });
+
+    res.status(200).json({ success: true, listing: listingObj });
   } catch (error) {
     next(error);
   }
@@ -281,11 +305,15 @@ exports.getMapListings = async (req, res, next) => {
       "location.lat": { $exists: true, $ne: null },
       "location.lng": { $exists: true, $ne: null },
     })
-      .populate("donor", "name role phone")
-      .select("foodName quantity category status location expiryDate images donor createdAt")
+      .populate("donor", "name role")
+      .select("foodName quantity category status location expiryDate images donor claimedBy createdAt")
       .limit(200);
 
-    res.status(200).json({ success: true, count: listings.length, listings });
+    const requesterId = req.user._id.toString();
+    const isAdmin = req.user.role === "admin";
+    const listingObjs = listings.map((l) => applyLocationPrivacy(l.toObject(), { requesterId, isAdmin }));
+
+    res.status(200).json({ success: true, count: listingObjs.length, listings: listingObjs });
   } catch (error) {
     next(error);
   }
