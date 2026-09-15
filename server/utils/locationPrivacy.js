@@ -57,6 +57,19 @@ function applyLocationPrivacy(listingObj, { requesterId, isAdmin }) {
   const donorId = listingObj.donor?._id || listingObj.donor;
   const claimedById = listingObj.claimedBy?._id || listingObj.claimedBy;
 
+  // `geo` is the raw GeoJSON point used only for server-side $geoNear queries
+  // (see listingController.getListings) — clients use lat/lng, so it never
+  // needs to leave the server. Strip it unconditionally, independent of the
+  // exact-location authorization check below, since it's not a UI field.
+  delete listingObj.location.geo;
+
+  // $geoNear (used for "near me" results) attaches this in meters — round it
+  // for display so we're not implying GPS-grade precision on a fuzzed pin.
+  if (typeof listingObj.distanceMeters === "number") {
+    listingObj.distance = { meters: Math.round(listingObj.distanceMeters) };
+    delete listingObj.distanceMeters;
+  }
+
   if (canSeeExactLocation({ donorId, claimedById, requesterId, isAdmin })) {
     return listingObj;
   }

@@ -14,10 +14,16 @@ const CATEGORY_EMOJI = {
 };
 
 export default function FoodCard({ listing }) {
-  const { _id, foodName, quantity, category, expiryDate, location, images, status, donor } = listing;
+  const { _id, foodName, quantity, category, expiryDate, location, images, status, donor, distance } = listing;
 
   const daysLeft = Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
   const isUrgent = daysLeft <= 1 && status === "active";
+
+  const distanceLabel = distance?.meters != null
+    ? distance.meters < 1000
+      ? `${distance.meters} m away`
+      : `${(distance.meters / 1000).toFixed(1)} km away`
+    : null;
 
   return (
     <Link to={`/listings/${_id}`} className="card block group">
@@ -38,6 +44,11 @@ export default function FoodCard({ listing }) {
           <span className={STATUS_CLASSES[status]}>{status}</span>
           {isUrgent && <span className="badge bg-orange-100 text-orange-700">⚡ Urgent</span>}
         </div>
+        {distanceLabel && (
+          <span className="absolute top-2 right-2 badge bg-white/90 text-gray-text backdrop-blur-sm">
+            📍 {distanceLabel}
+          </span>
+        )}
       </div>
 
       {/* Content */}

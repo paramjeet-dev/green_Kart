@@ -6,36 +6,97 @@ const { notifyListingClaimed, notifyExchangeComplete } = require("../utils/push"
 const { emailListingClaimed, emailExchangeComplete } = require("../utils/email");
 const { canSeeExactLocation, applyLocationPrivacy } = require("../utils/locationPrivacy");
 
+// Builds the GeoJSON Point stored at location.geo from plain lat/lng, or
+// undefined when either is missing (a listing without a geocoded pickup
+// point just won't show up in "near me" results — it's still findable via
+// search/browse).
+function buildGeoPoint(lat, lng) {
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return undefined;
+  return { type: "Point", coordinates: [lng, lat] };
+}
+
+const DEFAULT_RADIUS_KM = 10;
+const MAX_RADIUS_KM = 100;
+
 // @desc    Get all active listings (with filters)
 // @route   GET /api/listings
 // @access  Private (any authenticated role)
 exports.getListings = async (req, res, next) => {
   try {
-    const { search, category, status = "active", page = 1, limit = 12 } = req.query;
+    const { search, category, status = "active", page = 1, limit = 12, lat, lng, radius } = req.query;
 
-    const query = { status };
-
-    if (search) {
-      query.$text = { $search: search };
-    }
-
-    if (category) {
-      query.category = category;
-    }
+    const nearLat = lat !== undefined ? parseFloat(lat) : NaN;
+    const nearLng = lng !== undefined ? parseFloat(lng) : NaN;
+    const hasNear = !Number.isNaN(nearLat) && !Number.isNaN(nearLng);
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const listings = await Listing.find(query)
-      .populate("donor", "name role avatar")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
     const requesterId = req.user._id.toString();
     const isAdmin = req.user.role === "admin";
-    const listingObjs = listings.map((l) => applyLocationPrivacy(l.toObject(), { requesterId, isAdmin }));
 
-    const total = await Listing.countDocuments(query);
+    let listingObjs, total;
+
+    if (hasNear) {
+      // "Near me" discovery. $geoNear must be the pipeline's first stage and
+      // needs the 2dsphere index on location.geo; it sorts by distance for
+      // us and adds distanceMeters to every doc, which is what makes "1.2 km
+      // away" possible on the card. It can't be combined with a $text search
+      // in the same query, so an active "near me" radius takes priority over
+      // free-text search (the UI only shows one control at a time).
+      const radiusKm = Math.min(parseFloat(radius) || DEFAULT_RADIUS_KM, MAX_RADIUS_KM);
+      const matchStage = { status };
+      if (category) matchStage.category = category;
+
+      const [result] = await Listing.aggregate([
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [nearLng, nearLat] },
+            distanceField: "distanceMeters",
+            maxDistance: radiusKm * 1000,
+            spherical: true,
+            query: matchStage,
+            key: "location.geo",
+          },
+        },
+        {
+          $facet: {
+            data: [
+              { $skip: skip },
+              { $limit: parseInt(limit) },
+              {
+                $lookup: {
+                  from: "users",
+                  let: { donorId: "$donor" },
+                  pipeline: [
+                    { $match: { $expr: { $eq: ["$_id", "$$donorId"] } } },
+                    { $project: { name: 1, role: 1, avatar: 1 } },
+                  ],
+                  as: "donor",
+                },
+              },
+              { $unwind: "$donor" },
+            ],
+            totalCount: [{ $count: "count" }],
+          },
+        },
+      ]);
+
+      const rawListings = result?.data || [];
+      total = result?.totalCount?.[0]?.count || 0;
+      listingObjs = rawListings.map((l) => applyLocationPrivacy(l, { requesterId, isAdmin }));
+    } else {
+      const query = { status };
+      if (search) query.$text = { $search: search };
+      if (category) query.category = category;
+
+      const listings = await Listing.find(query)
+        .populate("donor", "name role avatar")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit));
+
+      total = await Listing.countDocuments(query);
+      listingObjs = listings.map((l) => applyLocationPrivacy(l.toObject(), { requesterId, isAdmin }));
+    }
 
     res.status(200).json({
       success: true,
@@ -109,6 +170,9 @@ exports.createListing = async (req, res, next) => {
       });
     }
 
+    const parsedLat = lat ? parseFloat(lat) : undefined;
+    const parsedLng = lng ? parseFloat(lng) : undefined;
+
     const listing = await Listing.create({
       donor: req.user._id,
       foodName,
@@ -120,8 +184,11 @@ exports.createListing = async (req, res, next) => {
       images,
       location: {
         address,
-        lat: lat ? parseFloat(lat) : undefined,
-        lng: lng ? parseFloat(lng) : undefined,
+        lat: parsedLat,
+        lng: parsedLng,
+        // Keep the GeoJSON point in sync with lat/lng so this listing is
+        // actually discoverable by the radius query in getListings below.
+        geo: buildGeoPoint(parsedLat, parsedLng),
       },
     });
 
@@ -153,6 +220,9 @@ exports.updateListing = async (req, res, next) => {
 
     const { foodName, description, quantity, category, expiryDate, pickupInstructions, address, lat, lng } = req.body;
 
+    const parsedLat = lat ? parseFloat(lat) : undefined;
+    const parsedLng = lng ? parseFloat(lng) : undefined;
+
     const updateData = {
       foodName,
       description,
@@ -161,8 +231,10 @@ exports.updateListing = async (req, res, next) => {
       expiryDate,
       pickupInstructions,
       "location.address": address,
-      "location.lat": lat ? parseFloat(lat) : undefined,
-      "location.lng": lng ? parseFloat(lng) : undefined,
+      "location.lat": parsedLat,
+      "location.lng": parsedLng,
+      // Re-derive so an edited address/pin still shows up in "near me" results.
+      "location.geo": buildGeoPoint(parsedLat, parsedLng),
     };
 
     // Remove undefined fields
@@ -325,6 +397,7 @@ exports.getMapListings = async (req, res, next) => {
 exports.getMyListings = async (req, res, next) => {
   try {
     const listings = await Listing.find({ donor: req.user._id })
+      .select("-location.geo") // internal-only field used for $geoNear, not a UI value
       .populate("claimedBy", "name email role")
       .sort({ createdAt: -1 });
 
