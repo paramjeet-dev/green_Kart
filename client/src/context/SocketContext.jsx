@@ -37,9 +37,10 @@ export const SocketProvider = ({ children }) => {
     socketRef.current?.emit("chat:join", { listingId });
   };
 
-  const sendMessage = ({ listingId, receiverId, content }) => {
-    socketRef.current?.emit("message:send", { listingId, receiverId, content });
-  };
+  // Sending is a REST call (POST /api/messages) — the server broadcasts
+  // "message:receive" itself right after persisting it, so there's no
+  // separate socket emit here for sending a message anymore. See
+  // messageController.sendMessage.
 
   const onMessage = (handler) => {
     socketRef.current?.on("message:receive", handler);
@@ -60,7 +61,7 @@ export const SocketProvider = ({ children }) => {
   };
 
   return (
-    <SocketContext.Provider value={{ socket: socketRef.current, connected, joinChat, sendMessage, onMessage, onNotification, emitTyping, emitStopTyping }}>
+    <SocketContext.Provider value={{ socket: socketRef.current, connected, joinChat, onMessage, onNotification, emitTyping, emitStopTyping }}>
       {children}
     </SocketContext.Provider>
   );

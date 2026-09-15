@@ -1,5 +1,6 @@
 const Message = require("../models/Message");
 const ErrorResponse = require("../utils/errorResponse");
+const { notifyNewMessage } = require("../utils/push");
 
 // @desc    Get messages for a listing between two users
 // @route   GET /api/messages/:listingId/:userId
@@ -54,6 +55,25 @@ exports.sendMessage = async (req, res, next) => {
       { path: "sender", select: "name avatar role" },
       { path: "receiver", select: "name avatar role" },
     ]);
+
+    // Broadcast from here — right after the authenticated write — instead of
+    // having the client separately emit over the socket with its own,
+    // unverified copy of sender/content. This is the one place a message
+    // gets created, so it's the one place it gets announced from.
+    const io = req.app.get("io");
+    if (io) {
+      const trimmedContent = content.trim();
+      const preview = trimmedContent.length > 50 ? trimmedContent.slice(0, 50) + "..." : trimmedContent;
+
+      io.to(`chat:${listingId}`).emit("message:receive", { ...populatedMessage.toObject(), listingId });
+      io.to(`user:${receiverId}`).emit("notification:message", {
+        listingId,
+        senderName: req.user.name,
+        preview,
+      });
+    }
+
+    notifyNewMessage(receiverId, req.user.name, content.trim().length > 80 ? content.trim().slice(0, 80) + "…" : content.trim()).catch(() => {});
 
     res.status(201).json({ success: true, message: populatedMessage });
   } catch (error) {

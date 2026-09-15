@@ -153,6 +153,14 @@ exports.deleteUser = async (req, res, next) => {
 
     await Promise.all([
       Listing.deleteMany({ donor: user._id }),
+      // Listings this user had claimed shouldn't be left permanently stuck in
+      // "claimed" pointing at a now-deleted user — revert them to "active" so
+      // they're claimable again. (Deliberately scoped to status "claimed";
+      // "completed" listings keep their history and just lose the reference.)
+      Listing.updateMany(
+        { claimedBy: user._id, status: "claimed" },
+        { $set: { status: "active", claimedBy: null, claimedAt: null } }
+      ),
       Message.deleteMany({ $or: [{ sender: user._id }, { receiver: user._id }] }),
       user.deleteOne(),
     ]);

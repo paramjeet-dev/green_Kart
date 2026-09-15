@@ -24,7 +24,7 @@ function formatDate(date) {
 export default function Messages() {
   const { listingId, userId } = useParams();
   const { user } = useAuth();
-  const { joinChat, sendMessage: socketSend, onMessage, emitTyping, emitStopTyping } = useSocket();
+  const { joinChat, onMessage, emitTyping, emitStopTyping } = useSocket();
 
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -62,7 +62,11 @@ export default function Messages() {
   useEffect(() => {
     const unsub = onMessage((msg) => {
       if (msg.listingId === activeConv?.listingId) {
-        setMessages((prev) => [...prev, { ...msg, sender: { _id: msg.senderId, name: msg.senderName, avatar: msg.senderAvatar } }]);
+        // The sender is in the chat room too (joinChat runs for whoever has
+        // it open), so the message they just sent arrives back over the
+        // socket in addition to being added locally from the REST response
+        // below — skip it if we've already got that _id.
+        setMessages((prev) => (prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]));
       }
     });
     return unsub;
@@ -83,11 +87,6 @@ export default function Messages() {
         content: input.trim(),
       });
       setMessages((prev) => [...prev, data.message]);
-      socketSend({
-        listingId: activeConv.listingId,
-        receiverId: activeConv.userId,
-        content: input.trim(),
-      });
       setInput("");
     } catch {
       toast.error("Failed to send message");
