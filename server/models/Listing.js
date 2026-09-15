@@ -47,6 +47,15 @@ const listingSchema = new mongoose.Schema(
       address: { type: String, required: [true, "Address is required"] },
       lat: { type: Number },
       lng: { type: Number },
+      // GeoJSON mirror of lat/lng, kept in sync by the controller whenever
+      // location is written (see listingController create/updateListing).
+      // MongoDB's geospatial queries ($near / $geoNear) require coordinates
+      // in this [lng, lat] Point shape backed by a 2dsphere index — the old
+      // plain lat/lng fields can't power a "listings within X km" query.
+      geo: {
+        type: { type: String, enum: ["Point"], default: "Point" },
+        coordinates: { type: [Number], default: undefined }, // [lng, lat]
+      },
     },
     status: {
       type: String,
@@ -83,13 +92,26 @@ const listingSchema = new mongoose.Schema(
 // reminder query) fast.
 listingSchema.index({ status: 1, expiryDate: 1 });
 
+// Supports getMyListings/getDashboardStats, which always filter by the
+// listing's owner — without this every "my listings" or "my stats" query was
+// doing a full collection scan.
+listingSchema.index({ donor: 1 });
+
+// Same reasoning for the claimant side: getDashboardStats' "food I've
+// claimed" counts, and the claimedBy lookups in deleteUser, both filter on
+// this field alone.
+listingSchema.index({ claimedBy: 1 });
+
 // Supports the daily cron job that archives listings stuck in "claimed" for too long
 listingSchema.index({ status: 1, claimedAt: 1 });
 
 // Text index for search
 listingSchema.index({ foodName: "text", description: "text" });
 
-// Geo index for location-based queries
-listingSchema.index({ "location.lat": 1, "location.lng": 1 });
+// Powers "listings near me": $geoNear/$near queries need a 2dsphere index on
+// a GeoJSON field. The old { "location.lat": 1, "location.lng": 1 } index
+// could only ever support exact-match lookups, not real radius/distance
+// queries, which is why "nearby listings" was never actually implemented.
+listingSchema.index({ "location.geo": "2dsphere" });
 
 module.exports = mongoose.model("Listing", listingSchema);
