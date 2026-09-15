@@ -10,7 +10,9 @@ const helmetConfig = helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "res.cloudinary.com", "*.openstreetmap.org", "tile.openstreetmap.org"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
-      connectSrc: ["'self'", "nominatim.openstreetmap.org"],
+      // Nominatim is now called from the server (see routes/geocode.js), so the
+      // browser only ever needs to reach our own API — no third-party connect-src needed.
+      connectSrc: ["'self'"],
     },
   },
   crossOriginEmbedderPolicy: false, // allow Leaflet tiles

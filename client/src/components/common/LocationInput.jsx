@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { MapPin, Loader } from "lucide-react";
+import api from "../../services/api";
 
 export default function LocationInput({ value, onChange, onSelect, placeholder = "Search address..." }) {
   const [query, setQuery] = useState(value || "");
@@ -23,12 +24,12 @@ export default function LocationInput({ value, onChange, onSelect, placeholder =
     if (q.length < 3) { setSuggestions([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`,
-        { headers: { "Accept-Language": "en" } }
-      );
-      const data = await res.json();
-      setSuggestions(data);
+      // Routed through our own server (server/routes/geocode.js) instead of
+      // calling Nominatim directly — the server caches results and attaches
+      // the User-Agent Nominatim's usage policy requires, so we're not
+      // hammering a third-party API straight from every user's browser.
+      const { data } = await api.get("/geocode/search", { params: { q } });
+      setSuggestions(data.results);
       setOpen(true);
     } catch {
       setSuggestions([]);

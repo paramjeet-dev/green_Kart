@@ -10,7 +10,6 @@ const User = require("./models/User");
 const errorHandler = require("./middleware/errorHandler");
 const { helmetConfig, apiLimiter } = require("./middleware/security");
 const setupCronJobs = require("./utils/cron");
-const { notifyNewMessage } = require("./utils/push");
 
 dotenv.config();
 connectDB();
@@ -26,6 +25,12 @@ const io = new Server(server, {
   },
 });
 
+// Make the io instance reachable from route handlers (req.app.get("io")) so
+// sendMessage() in messageController can broadcast right after the
+// authenticated DB write, instead of the client separately re-emitting over
+// the socket with its own copy of the message.
+app.set("io", io);
+
 // ── Core middleware ───────────────────────────────────────────────────────────
 app.use(helmetConfig);
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
@@ -40,6 +45,7 @@ app.use("/api/listings", require("./routes/listings"));
 app.use("/api/messages", require("./routes/messages"));
 app.use("/api/admin",    require("./routes/admin"));
 app.use("/api/push",     require("./routes/push"));
+app.use("/api/geocode",  require("./routes/geocode"));
 
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "GreenKart API is running 🌱", timestamp: new Date() });
@@ -82,31 +88,12 @@ io.on("connection", (socket) => {
     if (listingId) socket.join(`chat:${listingId}`);
   });
 
-  socket.on("message:send", async ({ listingId, receiverId, content }) => {
-    if (!listingId || !receiverId || !content) return;
-
-    const payload = {
-      listingId,
-      senderId: socket.userId,
-      receiverId,
-      content,
-      senderName: socket.user.name,
-      senderAvatar: socket.user.avatar,
-      createdAt: new Date(),
-    };
-
-    io.to(`chat:${listingId}`).emit("message:receive", payload);
-    io.to(`user:${receiverId}`).emit("notification:message", {
-      listingId,
-      senderName: socket.user.name,
-      preview: content.length > 50 ? content.slice(0, 50) + "..." : content,
-    });
-
-    // Web push for new message
-    const preview = content.length > 80 ? content.slice(0, 80) + "…" : content;
-    notifyNewMessage(receiverId, socket.user.name, preview).catch(() => {});
-  });
-
+  // Sending/persisting a message happens over REST (POST /api/messages) so it
+  // goes through auth + validation and is the single source of truth; the
+  // server broadcasts "message:receive" from inside sendMessage() right after
+  // that DB write. There's no "message:send" socket event anymore — having
+  // both a REST write and a client-trusted socket re-broadcast meant every
+  // message existed twice, built from two different (and divergent) payloads.
   socket.on("listing:claimed",   ({ listingId, claimedBy }) => io.emit("listing:statusUpdate", { listingId, status: "claimed", claimedBy }));
   socket.on("listing:completed", ({ listingId }) => io.emit("listing:statusUpdate", { listingId, status: "completed" }));
 
