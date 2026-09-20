@@ -62,9 +62,9 @@ exports.login = async (req, res, next) => {
 
     const user = await User.findOne({ email }).select("+password");
     if (!user || !(await user.matchPassword(password))) {
-      return next(new ErrorResponse("Invalid email or password", 403));
+      return next(new ErrorResponse("Invalid email or password", 401));
     }
-    if (!user.isActive) return next(new ErrorResponse("Your account has been deactivated", 403));
+    if (!user.isActive) return next(new ErrorResponse("Your account has been deactivated", 401));
 
     await sendTokenResponse(user, 200, req, res);
   } catch (error) {

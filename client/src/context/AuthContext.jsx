@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import api from "../services/api";
+import api, { refreshAccessToken as refreshTokenRequest } from "../services/api";
 
 const AuthContext = createContext(null);
 
@@ -20,15 +20,19 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // The refresh token lives in an httpOnly cookie the browser sends automatically —
-  // this just asks the server to mint a new access token from it.
+  // this just asks the server to mint a new access token from it. The actual
+  // request lives in services/api.js so this and the reactive 401 handler
+  // there share one implementation instead of two.
   const refreshAccessToken = useCallback(async () => {
-    const { data } = await api.post("/auth/refresh");
-    localStorage.setItem("gk_token", data.token);
-    setToken(data.token);
-    return data.token;
+    const newToken = await refreshTokenRequest();
+    setToken(newToken);
+    return newToken;
   }, []);
 
-  // Verify token on mount
+  // Verify token on mount. api.js's response interceptor already retries a
+  // 401 here with one silent refresh before this ever sees an error, so if
+  // this still throws, the session is genuinely gone — no need to duplicate
+  // that refresh attempt here too.
   useEffect(() => {
     const verify = async () => {
       if (!token) { setLoading(false); return; }
@@ -37,16 +41,7 @@ export const AuthProvider = ({ children }) => {
         setUser(data.user);
         localStorage.setItem("gk_user", JSON.stringify(data.user));
       } catch {
-        // Access token expired/invalid — try a silent refresh via the cookie
-        // before giving up and logging the person out.
-        try {
-          await refreshAccessToken();
-          const me = await api.get("/auth/me");
-          setUser(me.data.user);
-          localStorage.setItem("gk_user", JSON.stringify(me.data.user));
-        } catch {
-          logout();
-        }
+        logout();
       } finally {
         setLoading(false);
       }

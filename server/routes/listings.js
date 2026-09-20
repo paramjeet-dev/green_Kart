@@ -19,7 +19,7 @@ router.get("/:id",      protect, getListing);
 
 // Protected
 router.post(   "/",           protect, authorize("donor"), uploadLimiter, upload.array("images", 3), sanitiseBody, validateListing, handleValidation, createListing);
-router.put(    "/:id",        protect, authorize("donor"), sanitiseBody, updateListing);
+router.put(    "/:id",        protect, authorize("donor"), sanitiseBody, validateListing, handleValidation, updateListing);
 router.delete( "/:id",        protect, authorize("donor"), deleteListing);
 router.put(    "/:id/claim",  protect, authorize("ngo", "individual"), claimListing);
 router.put(    "/:id/complete", protect, authorize("donor"), completeListing);

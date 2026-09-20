@@ -58,18 +58,27 @@ const setupCronJobs = () => {
     }
   });
 
-  // -- Send expiry warnings daily at noon for listings expiring within 24h --
-  cron.schedule("0 12 * * *", async () => {
+  // -- Send expiry warnings, checked hourly for listings expiring within 24h --
+  // Previously this ran once a day at a fixed noon, so a listing whose 24h
+  // window opened shortly after that run wouldn't get warned until nearly a
+  // full day later — sometimes after it had already expired. Running hourly
+  // and tracking `expiryWarningSent` (so a listing is only ever warned once,
+  // instead of every run for as long as it stays in the 24h window) makes
+  // the warning relative to each listing's own expiry instead of the clock.
+  cron.schedule("0 * * * *", async () => {
     try {
       const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const expiring = await Listing.find({
         status: "active",
         expiryDate: { $gte: new Date(), $lte: in24h },
+        expiryWarningSent: { $ne: true },
       }).populate("donor", "name email");
       for (const listing of expiring) {
         if (!listing.donor) continue;
         notifyExpiryWarning(listing.donor._id, listing.foodName).catch(() => {});
         emailExpiryWarning(listing.donor.email, listing.donor.name, listing.foodName, listing._id).catch(() => {});
+        listing.expiryWarningSent = true;
+        await listing.save();
       }
       if (expiring.length) console.log(`⚠️  Cron: Warned donors about ${expiring.length} expiring listing(s)`);
     } catch (err) { console.error("Cron expiry warning error:", err.message); }

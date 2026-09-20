@@ -124,8 +124,15 @@ exports.getListing = async (req, res, next) => {
       return next(new ErrorResponse("Listing not found", 404));
     }
 
-    // Increment view count
-    await Listing.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
+    // Only count views from people other than the donor — a donor
+    // repeatedly checking their own listing shouldn't inflate its "views"
+    // stat. (This doesn't de-duplicate repeat visits from the same
+    // recipient; doing that properly needs per-viewer tracking, which felt
+    // like more state than this stat warrants — this just fixes the most
+    // common source of inflation.)
+    if (listing.donor.toString() !== req.user._id.toString()) {
+      await Listing.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
+    }
 
     // Exact address, coordinates, and donor phone are only for people
     // actually party to this exchange — the donor, whoever claimed it, or
@@ -237,6 +244,12 @@ exports.updateListing = async (req, res, next) => {
       "location.geo": buildGeoPoint(parsedLat, parsedLng),
     };
 
+    // A changed expiry date means the old warning (if any already went out)
+    // is no longer relevant to the new deadline — let the cron warn again.
+    if (expiryDate) {
+      updateData.expiryWarningSent = false;
+    }
+
     // Remove undefined fields
     Object.keys(updateData).forEach((key) => updateData[key] === undefined && delete updateData[key]);
 
@@ -266,9 +279,20 @@ exports.deleteListing = async (req, res, next) => {
       return next(new ErrorResponse("Not authorized to delete this listing", 403));
     }
 
-    // Delete images from Cloudinary
+    // A claimed listing has someone else counting on it — deleting it out
+    // from under them would orphan their chat thread and any pickup they've
+    // arranged. Once it's unclaimed again or actually completed, it's fair
+    // game to remove.
+    if (listing.status === "claimed") {
+      return next(new ErrorResponse("This listing has been claimed and can't be deleted — mark the exchange complete first", 400));
+    }
+
+    // Best-effort image cleanup — Promise.all would reject the whole batch
+    // (and block deleting the listing) if even one Cloudinary call flaked,
+    // so any that fail here are just left as orphaned assets rather than
+    // stopping the donor from deleting their own listing.
     if (listing.images && listing.images.length > 0) {
-      await Promise.all(
+      await Promise.allSettled(
         listing.images.map((img) => cloudinary.uploader.destroy(img.publicId))
       );
     }
@@ -286,31 +310,35 @@ exports.deleteListing = async (req, res, next) => {
 // @access  Private (NGO / Individual)
 exports.claimListing = async (req, res, next) => {
   try {
+    // Fetched only to give a clear "not found" / "can't claim your own"
+    // message — the actual claim below is atomic on its own and doesn't
+    // rely on this read for correctness.
     const listing = await Listing.findById(req.params.id);
-
     if (!listing) {
       return next(new ErrorResponse("Listing not found", 404));
     }
-
-    if (listing.status !== "active") {
-      return next(new ErrorResponse("This listing is no longer available", 400));
-    }
-
     if (listing.donor.toString() === req.user._id.toString()) {
       return next(new ErrorResponse("You cannot claim your own listing", 400));
     }
 
-    const updatedListing = await Listing.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: "claimed",
-        claimedBy: req.user._id,
-        claimedAt: new Date(),
-      },
+    // Atomic claim: the availability check happens as part of the same
+    // write that sets status to "claimed", not as an earlier separate read.
+    // Two people tapping "Claim" at the same moment could previously both
+    // pass a `status !== "active"` check before either write landed, so the
+    // second write silently overwrote the first — two NGOs both told "you
+    // claimed it!" for the same food. Scoping the filter to status: "active"
+    // means only the first request can ever match; the second gets null.
+    const updatedListing = await Listing.findOneAndUpdate(
+      { _id: req.params.id, status: "active" },
+      { status: "claimed", claimedBy: req.user._id, claimedAt: new Date() },
       { new: true }
     )
       .populate("donor", "name email role phone avatar")
       .populate("claimedBy", "name email role");
+
+    if (!updatedListing) {
+      return next(new ErrorResponse("This listing is no longer available", 400));
+    }
 
     // Update recipient stats
     await User.findByIdAndUpdate(req.user._id, { $inc: { totalReceived: 1 } });

@@ -19,7 +19,19 @@ exports.protect = async (req, res, next) => {
     req.user = await User.findById(decoded.id);
 
     if (!req.user) {
-      return next(new ErrorResponse("User not found", 404));
+      // A token can outlive the user it was issued for (deleted account,
+      // stale token from before a wipe). This is an auth failure — 401, not
+      // 404 — because the client's response interceptor only treats 401 as
+      // "session is gone, log the user out" (see client/src/services/api.js).
+      return next(new ErrorResponse("Not authorized, user no longer exists", 401));
+    }
+
+    // login() already refuses a deactivated account at sign-in, but that
+    // does nothing for a token issued *before* an admin deactivated them —
+    // without this check it keeps working for the rest of its (up to
+    // 7-day) lifetime. Check it on every request, not just at login.
+    if (!req.user.isActive) {
+      return next(new ErrorResponse("Your account has been deactivated", 401));
     }
 
     next();

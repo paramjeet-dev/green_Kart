@@ -79,6 +79,14 @@ const listingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Tracks whether the "expiring within 24h" push/email has already gone
+    // out for this listing, so the hourly cron below (see utils/cron.js)
+    // doesn't need a fixed once-a-day clock time to avoid re-notifying —
+    // and doesn't send the same warning over and over.
+    expiryWarningSent: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
